@@ -43,13 +43,12 @@ def download_media(url):
     video_path = os.path.join(MEDIA_DIR, "input_video.mp4")
     audio_path = os.path.join(MEDIA_DIR, "input_audio.mp3")
 
-    # Anti-Bot Flags optimized for Cloud CI/CD environments (iOS & VR clients bypass PO Token checks)
+    # Anti-Bot Flags optimized for Cloud CI/CD environments
     yt_dlp_common_args = [
         "--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
         "--extractor-args", "youtube:player_client=ios,android_vr,web",
         "--no-check-certificates",
-        "--geo-bypass",
-        "--remote-header-name"
+        "--geo-bypass"
     ]
 
     if os.path.exists("cookies.txt"):
