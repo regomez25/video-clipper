@@ -120,35 +120,31 @@ def transcribe_audio(audio_path):
 # -------------------------------------------------------------------
 # 4. LLM VIRAL TIMESTAMP EXTRACTION
 # -------------------------------------------------------------------
-def get_viral_timestamps(transcript_data):
+def get_viral_timestamps(transcript):
     print("🤖 Asking LLM to pick top viral moments...")
-    prompt = f"""
-    You are an expert short-form editor. Analyze this podcast transcript with timestamps.
-    Identify the TOP 2 standalone high-value clips (between 30 and 45 seconds long).
     
-    Return ONLY a valid JSON object in this exact format:
-    {{
-      "clips": [
-        {{
-          "start": 12.5,
-          "end": 42.0,
-          "title": "Startup_Advice"
-        }}
-      ]
-    }}
+    # Use currently supported model name
+    MODEL_NAME = "llama-3.1-8b-instant"  # or "llama-3.3-70b-specdec"
+
+    prompt = f"""
+    Analyze the following transcript and extract 1-3 highly engaging short clip segments (30-60 seconds each).
+    Return ONLY a JSON array with objects containing 'start', 'end', and 'title'.
 
     Transcript:
-    {json.dumps(transcript_data)}
+    {transcript}
     """
 
     response = client.chat.completions.create(
-        model=LLM_MODEL,
-        response_format={"type": "json_object"},
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3
+        model=MODEL_NAME,
+        messages=[
+            {"role": "system", "content": "You are an expert video editor picking viral clips."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.3,
+        response_format={"type": "json_object"}
     )
 
-    return json.loads(response.choices[0].message.content)
+    return response.choices[0].message.content
 
 # -------------------------------------------------------------------
 # 5. FFMPEG CROP & RENDER (9:16 VERTICAL)
