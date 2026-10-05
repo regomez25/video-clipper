@@ -43,14 +43,15 @@ def download_media(url):
     video_path = os.path.join(MEDIA_DIR, "input_video.mp4")
     audio_path = os.path.join(MEDIA_DIR, "input_audio.mp3")
 
-    # Anti-bot base flags
+    # Anti-bot base flags with explicit Node.js JS runtime solver
     yt_dlp_common_args = [
+        "--js-runtimes", "node",
         "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "--no-check-certificates",
         "--geo-bypass"
     ]
 
-    # Select player clients compatible with cookie authentication
+    # Apply cookie authentication with supported player clients
     if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
         print("🔑 Found cookies.txt, applying session authentication...")
         yt_dlp_common_args.extend([
@@ -63,7 +64,7 @@ def download_media(url):
             "--extractor-args", "youtube:player_client=ios,android"
         ])
 
-    # 1. Download Video Stream
+    # 1. Download Video
     cmd_video = [
         "yt-dlp",
         *yt_dlp_common_args,
@@ -75,7 +76,7 @@ def download_media(url):
     ]
     subprocess.run(cmd_video, check=True)
 
-    # 2. Extract Audio Stream
+    # 2. Extract Audio
     cmd_audio = [
         "yt-dlp",
         *yt_dlp_common_args,

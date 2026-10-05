@@ -23,15 +23,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Set up Node.js & Install JS Challenge Solver
+      # Standard Node.js setup provides the JS runtime yt-dlp needs
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-
-      # FIX: Install YouTube JS challenge solver package globally
-      - name: Install yt-dlp EJS Engine
-        run: |
-          npm install -g @yt-dlp/ejs
 
       - name: Install System FFmpeg
         run: |
