@@ -44,44 +44,31 @@ def download_media(url):
     video_path = os.path.join(MEDIA_DIR, "input_video.mp4")
     audio_path = os.path.join(MEDIA_DIR, "input_audio.mp3")
 
-    # Anti-bot base options with valid dictionary format for js_runtimes
+    # Anti-bot options optimized specifically for datacenter IPs
     ydl_opts_base = {
         'geo_bypass': True,
         'nocheckcertificate': True,
         'quiet': False,
         'no_warnings': False,
-        'js_runtimes': {'node': {}},
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+        'extractor_args': {
+            'youtube': {
+                # These clients bypass PO Token and datacenter login requirements
+                'player_client': ['android', 'ios', 'tv_embedded']
+            }
+        }
     }
 
-    # Separate cookie-supporting clients from non-cookie clients
-    cookie_file = "cookies.txt"
-    if os.path.exists(cookie_file) and os.path.getsize(cookie_file) > 100:
-        print("🔑 Applying session cookies with web/mweb player clients...")
-        ydl_opts_base['cookiefile'] = cookie_file
-        ydl_opts_base['extractor_args'] = {
-            'youtube': {
-                'player_client': ['mweb', 'web', 'tv']
-            }
-        }
-    else:
-        print("ℹ️ Operating without cookies (using android/ios mobile fallback)...")
-        ydl_opts_base['extractor_args'] = {
-            'youtube': {
-                'player_client': ['android', 'ios']
-            }
-        }
-
-    # 1. Video Stream Configuration (With broad fallback selector)
+    # 1. Video Stream Download Options
     ydl_opts_video = {
         **ydl_opts_base,
-        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/b/best',
+        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
         'outtmpl': video_path,
         'merge_output_format': 'mp4',
         'overwrites': True,
     }
 
-    # 2. Audio Stream Configuration
+    # 2. Audio Stream Extraction Options
     ydl_opts_audio = {
         **ydl_opts_base,
         'format': 'bestaudio/best',

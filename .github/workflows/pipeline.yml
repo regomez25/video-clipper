@@ -39,13 +39,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade --force-reinstall "yt-dlp[default]" openai requests
 
-      - name: Create Cookies File
-        env:
-          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
-        run: |
-          if [ -n "$YOUTUBE_COOKIES" ]; then
-            echo "$YOUTUBE_COOKIES" > cookies.txt
-          fi
+      #- name: Create Cookies File
+      # env:
+      #   YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+      # run: |
+      #   if [ -n "$YOUTUBE_COOKIES" ]; then
+      #     echo "$YOUTUBE_COOKIES" > cookies.txt
+      #    fi
 
       - name: Execute Pipeline Script
         env:
