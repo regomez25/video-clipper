@@ -43,7 +43,7 @@ def download_media(url):
     video_path = os.path.join(MEDIA_DIR, "input_video.mp4")
     audio_path = os.path.join(MEDIA_DIR, "input_audio.mp3")
 
-    # Anti-Bot Flags for yt-dlp on Cloud Runners
+    # Anti-Bot Flags + Cookies file check
     yt_dlp_common_args = [
         "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "--extractor-args", "youtube:player_client=android,web",
@@ -51,7 +51,12 @@ def download_media(url):
         "--geo-bypass"
     ]
 
-    # 1. Download 1080p MP4
+    # Add cookies flag if file exists on runner
+    if os.path.exists("cookies.txt"):
+        print("🔑 Found cookies.txt, applying session authentication...")
+        yt_dlp_common_args.extend(["--cookies", "cookies.txt"])
+
+    # 1. Download Video
     cmd_video = [
         "yt-dlp",
         *yt_dlp_common_args,
@@ -62,7 +67,7 @@ def download_media(url):
     ]
     subprocess.run(cmd_video, check=True)
 
-    # 2. Extract MP3 Audio
+    # 2. Extract Audio
     cmd_audio = [
         "yt-dlp",
         *yt_dlp_common_args,
@@ -74,7 +79,6 @@ def download_media(url):
     subprocess.run(cmd_audio, check=True)
 
     return video_path, audio_path
-
 # -------------------------------------------------------------------
 # 3. CLOUD TRANSCRIPTION (WHISPER API)
 # -------------------------------------------------------------------
