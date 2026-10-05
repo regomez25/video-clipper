@@ -2,10 +2,8 @@ name: Automated Video Clipper
 
 on:
   schedule:
-    # Runs automatically every day at midnight (UTC)
     - cron: "0 0 * * *"
   workflow_dispatch:
-    # Allows manual trigger via the GitHub Actions web UI
     inputs:
       youtube_url:
         description: "YouTube Video URL to process"
@@ -20,20 +18,27 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.10
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
+
+      # FIX 1: Install Node.js for yt-dlp JavaScript challenge solver
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
       - name: Install System FFmpeg
         run: |
           sudo apt update
           sudo apt install -y ffmpeg
 
+      # FIX 2: Ensure yt-dlp is always updated to the latest build
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install --upgrade yt-dlp openai requests
 
       - name: Execute Pipeline Script
         env:

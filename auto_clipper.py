@@ -43,9 +43,18 @@ def download_media(url):
     video_path = os.path.join(MEDIA_DIR, "input_video.mp4")
     audio_path = os.path.join(MEDIA_DIR, "input_audio.mp3")
 
-    # Download best 1080p MP4 format
+    # Anti-Bot Flags for yt-dlp on Cloud Runners
+    yt_dlp_common_args = [
+        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "--extractor-args", "youtube:player_client=android,web",
+        "--no-check-certificates",
+        "--geo-bypass"
+    ]
+
+    # 1. Download 1080p MP4
     cmd_video = [
         "yt-dlp",
+        *yt_dlp_common_args,
         "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "-o", video_path,
         "--force-overwrites",
@@ -53,9 +62,10 @@ def download_media(url):
     ]
     subprocess.run(cmd_video, check=True)
 
-    # Extract MP3 for cloud transcription
+    # 2. Extract MP3 Audio
     cmd_audio = [
         "yt-dlp",
+        *yt_dlp_common_args,
         "-x", "--audio-format", "mp3",
         "-o", audio_path,
         "--force-overwrites",
