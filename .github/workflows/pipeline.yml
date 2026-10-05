@@ -23,11 +23,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Deno engine solves YouTube JS signature and n-parameter challenges
-      - name: Set up Deno
-        uses: denoland/setup-deno@v2
+      # Standard Node.js setup provides the JS runtime yt-dlp needs
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          deno-version: v1.x
+          node-version: "20"
 
       - name: Install System FFmpeg
         run: |
