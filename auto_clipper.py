@@ -19,7 +19,10 @@ if not YOUTUBE_URL:
 # API Engine Selection (Supports free-tier Groq API or OpenAI)
 if GROQ_API_KEY:
     print("🚀 Using Groq API Engine...")
-    client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=GROQ_API_KEY)
+    client = OpenAI(
+        api_key=os.environ.get("GROQ_API_KEY"),
+        base_url="https://api.groq.com/openai/v1"
+    )
     LLM_MODEL = "llama-3.3-70b-versatile"
     WHISPER_MODEL = "whisper-large-v3-turbo"
 elif OPENAI_API_KEY:
@@ -122,29 +125,26 @@ def transcribe_audio(audio_path):
 # -------------------------------------------------------------------
 def get_viral_timestamps(transcript):
     print("🤖 Asking LLM to pick top viral moments...")
-    
-    # Use currently supported model name
-    MODEL_NAME = "llama-3.1-8b-instant"  # or "llama-3.3-70b-specdec"
 
     prompt = f"""
     Analyze the following transcript and extract 1-3 highly engaging short clip segments (30-60 seconds each).
-    Return ONLY a JSON array with objects containing 'start', 'end', and 'title'.
+    Return a JSON object with a key 'clips' containing an array of objects with 'start', 'end', and 'title'.
 
     Transcript:
     {transcript}
     """
 
     response = client.chat.completions.create(
-        model=MODEL_NAME,
+        model="llama-3.3-70b-versatile",  # Supported Groq model
         messages=[
-            {"role": "system", "content": "You are an expert video editor picking viral clips."},
+            {"role": "system", "content": "You are an expert video editor picking viral clips. Output strict JSON only."},
             {"role": "user", "content": prompt}
         ],
         temperature=0.3,
         response_format={"type": "json_object"}
     )
 
-    return response.choices[0].message.content
+    return json.loads(response.choices[0].message.content)
 
 # -------------------------------------------------------------------
 # 5. FFMPEG CROP & RENDER (9:16 VERTICAL)
