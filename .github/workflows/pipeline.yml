@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Deno engine natively solves YouTube JS signature challenges
+      # Deno engine solves YouTube JS signature and n-parameter challenges
       - name: Set up Deno
         uses: denoland/setup-deno@v2
         with:
