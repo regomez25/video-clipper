@@ -23,8 +23,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      # FIX: Install Deno JS runtime for yt-dlp challenge solver
-      - name: Set up Deno (JS Runtime for yt-dlp)
+      - name: Set up Deno (JS Engine)
         uses: denoland/setup-deno@v2
         with:
           deno-version: v1.x
@@ -34,10 +33,11 @@ jobs:
           sudo apt update
           sudo apt install -y ffmpeg
 
+      # Upgrade yt-dlp to latest nightly release to handle YouTube player changes
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --upgrade yt-dlp openai requests
+          pip install --upgrade --force-reinstall "yt-dlp[default]" openai requests
 
       - name: Create Cookies File
         env:

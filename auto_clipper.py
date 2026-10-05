@@ -43,19 +43,20 @@ def download_media(url):
     video_path = os.path.join(MEDIA_DIR, "input_video.mp4")
     audio_path = os.path.join(MEDIA_DIR, "input_audio.mp3")
 
-    # Anti-Bot Flags configured for cookie authentication
+    # Anti-Bot Flags optimized for Cloud CI/CD environments (iOS & VR clients bypass PO Token checks)
     yt_dlp_common_args = [
-        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "--extractor-args", "youtube:player_client=mweb,web,tv",
+        "--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
+        "--extractor-args", "youtube:player_client=ios,android_vr,web",
         "--no-check-certificates",
-        "--geo-bypass"
+        "--geo-bypass",
+        "--remote-header-name"
     ]
 
     if os.path.exists("cookies.txt"):
         print("🔑 Found cookies.txt, applying session authentication...")
         yt_dlp_common_args.extend(["--cookies", "cookies.txt"])
 
-    # 1. Download Video (Flexible format selection + re-mux to standard mp4)
+    # 1. Download Video
     cmd_video = [
         "yt-dlp",
         *yt_dlp_common_args,
@@ -79,7 +80,6 @@ def download_media(url):
     subprocess.run(cmd_audio, check=True)
 
     return video_path, audio_path
-
 # -------------------------------------------------------------------
 # 3. CLOUD TRANSCRIPTION (WHISPER API)
 # -------------------------------------------------------------------
