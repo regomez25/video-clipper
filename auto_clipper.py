@@ -44,38 +44,30 @@ def download_media(url):
     video_path = os.path.join(MEDIA_DIR, "input_video.mp4")
     audio_path = os.path.join(MEDIA_DIR, "input_audio.mp3")
 
-    # Anti-bot base options with Deno/Node JS runtime challenge solver
+    # Clean yt-dlp configuration with auto-detected JS runtimes and client fallbacks
     ydl_opts_base = {
         'geo_bypass': True,
         'nocheckcertificate': True,
         'quiet': False,
         'no_warnings': False,
-        'js_runtimes': ['deno', 'node'],
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['tv_embedded', 'android', 'web']
+            }
+        }
     }
 
-    # Match player clients with cookie compatibility
+    # Apply cookies only if present and non-empty
     cookie_file = "cookies.txt"
     if os.path.exists(cookie_file) and os.path.getsize(cookie_file) > 100:
-        print("🔑 Applying session cookies with compatible player clients...")
+        print("🔑 Applying session cookies...")
         ydl_opts_base['cookiefile'] = cookie_file
-        ydl_opts_base['extractor_args'] = {
-            'youtube': {
-                'player_client': ['mweb', 'web', 'tv']
-            }
-        }
-    else:
-        print("ℹ️ No cookies present. Using mobile player client fallback...")
-        ydl_opts_base['extractor_args'] = {
-            'youtube': {
-                'player_client': ['android', 'ios']
-            }
-        }
 
-    # 1. Video Download Configuration (Resilient format selector)
+    # 1. Video Download Configuration
     ydl_opts_video = {
         **ydl_opts_base,
-        'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]/best',
+        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
         'outtmpl': video_path,
         'merge_output_format': 'mp4',
         'overwrites': True,
