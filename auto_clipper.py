@@ -43,49 +43,54 @@ def download_media(url):
     video_path = os.path.join(MEDIA_DIR, "input_video.mp4")
     audio_path = os.path.join(MEDIA_DIR, "input_audio.mp3")
 
-    # Anti-bot base flags with explicit Node.js JS runtime solver
-    yt_dlp_common_args = [
-        "--js-runtimes", "node",
-        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "--no-check-certificates",
-        "--geo-bypass"
-    ]
+    # Common options bypassing YouTube PO-Token & Data-center restrictions
+    ydl_opts_base = {
+        'geo_bypass': True,
+        'nocheckcertificate': True,
+        'quiet': False,
+        'no_warnings': False,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'extractor_args': {
+            'youtube': {
+                # tv_embedded and android_vr bypass GVS PO Token checks
+                'player_client': ['tv_embedded', 'android_vr', 'ios', 'web']
+            }
+        }
+    }
 
-    # Apply cookie authentication with supported player clients
     if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
         print("🔑 Found cookies.txt, applying session authentication...")
-        yt_dlp_common_args.extend([
-            "--cookies", "cookies.txt",
-            "--extractor-args", "youtube:player_client=mweb,web,tv"
-        ])
-    else:
-        print("⚠️ No cookies found, defaulting to mobile player clients...")
-        yt_dlp_common_args.extend([
-            "--extractor-args", "youtube:player_client=ios,android"
-        ])
+        ydl_opts_base['cookiefile'] = "cookies.txt"
 
-    # 1. Download Video
-    cmd_video = [
-        "yt-dlp",
-        *yt_dlp_common_args,
-        "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-        "--merge-output-format", "mp4",
-        "-o", video_path,
-        "--force-overwrites",
-        url
-    ]
-    subprocess.run(cmd_video, check=True)
+    # 1. Video Download Configuration
+    ydl_opts_video = {
+        **ydl_opts_base,
+        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+        'outtmpl': video_path,
+        'merge_output_format': 'mp4',
+        'overwrites': True,
+    }
 
-    # 2. Extract Audio
-    cmd_audio = [
-        "yt-dlp",
-        *yt_dlp_common_args,
-        "-x", "--audio-format", "mp3",
-        "-o", audio_path,
-        "--force-overwrites",
-        url
-    ]
-    subprocess.run(cmd_audio, check=True)
+    # 2. Audio Extraction Configuration
+    ydl_opts_audio = {
+        **ydl_opts_base,
+        'format': 'bestaudio/best',
+        'outtmpl': audio_path,
+        'overwrites': True,
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+    }
+
+    print("🎬 Downloading MP4 video stream...")
+    with yt_dlp.YoutubeDL(ydl_opts_video) as ydl:
+        ydl.download([url])
+
+    print("🎵 Extracting MP3 audio stream...")
+    with yt_dlp.YoutubeDL(ydl_opts_audio) as ydl:
+        ydl.download([url])
 
     return video_path, audio_path
 # -------------------------------------------------------------------

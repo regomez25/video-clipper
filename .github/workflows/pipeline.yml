@@ -23,11 +23,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Standard Node.js setup provides the JS runtime yt-dlp needs
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      # Deno engine natively solves YouTube JS signature challenges
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
         with:
-          node-version: "20"
+          deno-version: v1.x
 
       - name: Install System FFmpeg
         run: |
@@ -43,7 +43,9 @@ jobs:
         env:
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
-          echo "$YOUTUBE_COOKIES" > cookies.txt
+          if [ -n "$YOUTUBE_COOKIES" ]; then
+            echo "$YOUTUBE_COOKIES" > cookies.txt
+          fi
 
       - name: Execute Pipeline Script
         env:
