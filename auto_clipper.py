@@ -2,6 +2,7 @@ import os
 import json
 import sys
 import subprocess
+import yt_dlp
 from openai import OpenAI
 
 # -------------------------------------------------------------------
