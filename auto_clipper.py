@@ -42,9 +42,9 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 def download_media(url):
     print(f"📥 Downloading source video: {url}")
     video_path = os.path.join(MEDIA_DIR, "input_video.mp4")
-    audio_path = os.path.join(MEDIA_DIR, "input_audio.mp3")
+    audio_base = os.path.join(MEDIA_DIR, "input_audio")
+    audio_path = f"{audio_base}.mp3"
 
-    # Anti-bot options optimized specifically for datacenter IPs
     ydl_opts_base = {
         'geo_bypass': True,
         'nocheckcertificate': True,
@@ -53,13 +53,12 @@ def download_media(url):
         'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
         'extractor_args': {
             'youtube': {
-                # These clients bypass PO Token and datacenter login requirements
-                'player_client': ['android', 'ios', 'tv_embedded']
+                'player_client': ['android', 'ios']
             }
         }
     }
 
-    # 1. Video Stream Download Options
+    # 1. Download Video Stream
     ydl_opts_video = {
         **ydl_opts_base,
         'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
@@ -68,11 +67,11 @@ def download_media(url):
         'overwrites': True,
     }
 
-    # 2. Audio Stream Extraction Options
+    # 2. Download & Post-Process Audio Stream
     ydl_opts_audio = {
         **ydl_opts_base,
         'format': 'bestaudio/best',
-        'outtmpl': audio_path,
+        'outtmpl': audio_base,  # Omit extension so FFmpeg converts to input_audio.mp3
         'overwrites': True,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
