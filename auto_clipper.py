@@ -47,6 +47,11 @@ OUTPUT_DIR = "./output"
 os.makedirs(MEDIA_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# Explicitly exclude non-chat/utility models (guardrails, audio, embeddings)
+EXCLUDED_KEYWORDS = [
+    "guard", "prompt-guard", "whisper", "embedding", "safetensors", "moderation"
+]
+
 # -------------------------------------------------------------------
 # 2. DOWNLOAD YOUTUBE MEDIA
 # -------------------------------------------------------------------
@@ -69,7 +74,6 @@ def download_media(url):
         }
     }
 
-    # 1. Download Video Stream
     ydl_opts_video = {
         **ydl_opts_base,
         'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
@@ -78,7 +82,6 @@ def download_media(url):
         'overwrites': True,
     }
 
-    # 2. Download & Post-Process Audio Stream (64k bitrate for optimal size)
     ydl_opts_audio = {
         **ydl_opts_base,
         'format': 'bestaudio/best',
@@ -176,25 +179,32 @@ def transcribe_audio(audio_path):
     return combined_segments
 
 # -------------------------------------------------------------------
-# 5. DYNAMIC MODEL DISCOVERY & FALLBACK
+# 5. DYNAMIC MODEL DISCOVERY & STRICT FILTERING
 # -------------------------------------------------------------------
+def is_valid_chat_model(model_id):
+    """Filters out non-chat, safety, and embedding models."""
+    model_id_lower = model_id.lower()
+    return not any(excluded in model_id_lower for excluded in EXCLUDED_KEYWORDS)
+
 def get_available_llm_candidates():
-    """Fetches currently active models from the API and orders them by preference."""
+    """Fetches currently active models, filters non-generative tools, and respects preferences."""
     try:
         models_response = client.models.list()
-        active_model_ids = {m.id for m in models_response.data}
+        active_chat_models = {
+            m.id for m in models_response.data if is_valid_chat_model(m.id)
+        }
 
-        # Filter preferred models that are active right now
-        available_models = [m for m in PREFERRED_LLMS if m in active_model_ids]
+        # 1. Match preferred models first
+        available_preferred = [m for m in PREFERRED_LLMS if m in active_chat_models]
+        if available_preferred:
+            print(f"✅ Selected primary models: {available_preferred}")
+            return available_preferred
 
-        if available_models:
-            print(f"✅ Discovered active models: {available_models}")
-            return available_models
-
-        # Dynamic fallback: find any model with 'llama' or 'gpt' in the name
+        # 2. Dynamic fallback: Filter all generative models
         keyword = "llama" if GROQ_API_KEY else "gpt"
-        fallbacks = [m.id for m in models_response.data if keyword in m.id.lower()]
+        fallbacks = [m for m in active_chat_models if keyword in m.lower()]
         if fallbacks:
+            print(f"⚠️ Falling back to available generative models: {fallbacks}")
             return fallbacks
 
     except Exception as e:
@@ -202,17 +212,31 @@ def get_available_llm_candidates():
 
     return PREFERRED_LLMS
 
-def get_viral_timestamps(transcript):
+def format_transcript_for_llm(segments):
+    """Formats timestamped segments into clean, compact lines."""
+    formatted_lines = []
+    for s in segments:
+        formatted_lines.append(f"[{s['start']}s - {s['end']}s] {s['text']}")
+    return "\n".join(formatted_lines)
+
+def get_viral_timestamps(transcript_segments):
     print("🤖 Asking LLM to pick top viral moments...")
 
     candidate_models = get_available_llm_candidates()
+    formatted_transcript = format_transcript_for_llm(transcript_segments)
+
+    # Truncate transcript to ~12,000 words max to prevent context overflows
+    max_chars = 48000
+    if len(formatted_transcript) > max_chars:
+        print(f"⚠️ Transcript truncated to first {max_chars} characters to fit context limits.")
+        formatted_transcript = formatted_transcript[:max_chars]
 
     prompt = f"""
-    Analyze the following transcript and extract 1-3 highly engaging short clip segments (30-60 seconds each).
-    Return a JSON object with a key 'clips' containing an array of objects with 'start', 'end', and 'title'.
+    Analyze the transcript timestamps below and identify 1-3 engaging clip segments (30-60 seconds each).
+    Return a JSON object with a key 'clips' containing an array of objects with keys: 'start', 'end', and 'title'.
 
     Transcript:
-    {transcript}
+    {formatted_transcript}
     """
 
     last_error = None
@@ -223,17 +247,19 @@ def get_viral_timestamps(transcript):
             response = client.chat.completions.create(
                 model=model_name,
                 messages=[
-                    {"role": "system", "content": "You are an expert video editor picking viral clips. Output strict JSON only."},
+                    {"role": "system", "content": "You are an expert video editor. Return valid JSON only containing viral clips with exact start and end timestamps."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
                 response_format={"type": "json_object"}
             )
+            
+            raw_content = response.choices[0].message.content
             print(f"✅ Success using model: {model_name}")
-            return json.loads(response.choices[0].message.content)
+            return json.loads(raw_content)
 
         except Exception as e:
-            print(f"⚠️ Model {model_name} failed: {e}. Trying next available model...")
+            print(f"⚠️ Model {model_name} failed: {e}. Trying next model...")
             last_error = e
 
     raise RuntimeError(f"❌ All candidate models failed. Last error: {last_error}")
@@ -245,7 +271,6 @@ def render_vertical_clip(video_path, start_time, end_time, output_path):
     duration = end_time - start_time
     print(f"🎬 Rendering vertical clip ({start_time}s to {end_time}s)...")
 
-    # Crop 16:9 source into centered 9:16 vertical frame (1080x1920)
     filter_complex = "crop=ih*(9/16):ih:(iw-ih*(9/16))/2:0,scale=1080:1920"
 
     cmd = [
@@ -267,8 +292,8 @@ def render_vertical_clip(video_path, start_time, end_time, output_path):
 # -------------------------------------------------------------------
 def main():
     video_file, audio_file = download_media(YOUTUBE_URL)
-    transcript = transcribe_audio(audio_file)
-    clip_data = get_viral_timestamps(transcript)
+    transcript_segments = transcribe_audio(audio_file)
+    clip_data = get_viral_timestamps(transcript_segments)
 
     for i, clip in enumerate(clip_data.get("clips", [])):
         output_file = os.path.join(OUTPUT_DIR, f"clip_{i+1}.mp4")
