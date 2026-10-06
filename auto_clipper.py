@@ -1,6 +1,7 @@
 import os
 import json
 import sys
+import math
 import subprocess
 import yt_dlp
 from openai import OpenAI
@@ -16,13 +17,15 @@ if not YOUTUBE_URL:
     print("❌ Error: TARGET_URL environment variable is missing.")
     sys.exit(1)
 
-# API Engine Selection (Supports free-tier Groq API or OpenAI)
+# API Engine Selection
 if GROQ_API_KEY:
     print("🚀 Initializing Groq API Engine (Primary)...")
-    client = OpenAI(api_key=GROQ_API_KEY, base_url="https://groq.com")
-    LLM_MODEL = "openai/gpt-oss-120b"
+    client = OpenAI(
+        api_key=GROQ_API_KEY,
+        base_url="https://api.groq.com/openai/v1"
+    )
+    LLM_MODEL = "llama-3.1-8b-instant"
     WHISPER_MODEL = "whisper-large-v3-turbo"
-    USING_GROQ = True
 elif OPENAI_API_KEY:
     print("🚀 Initializing OpenAI API Engine (Primary)...")
     client = OpenAI(api_key=OPENAI_API_KEY)
@@ -68,16 +71,16 @@ def download_media(url):
         'overwrites': True,
     }
 
-    # 2. Download & Post-Process Audio Stream
+    # 2. Download & Post-Process Audio Stream (using 64k bitrate for smaller file size)
     ydl_opts_audio = {
         **ydl_opts_base,
         'format': 'bestaudio/best',
-        'outtmpl': audio_base,  # Omit extension so FFmpeg converts to input_audio.mp3
+        'outtmpl': audio_base,
         'overwrites': True,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
-            'preferredquality': '192',
+            'preferredquality': '64',
         }],
     }
 
@@ -92,35 +95,86 @@ def download_media(url):
     return video_path, audio_path
 
 # -------------------------------------------------------------------
-# 3. CLOUD TRANSCRIPTION (WHISPER API)
+# 3. AUDIO SPLITTING HELPER (FOR FILES > 24MB)
 # -------------------------------------------------------------------
-def transcribe_audio(audio_path):
-    print("🎙️️ Transcribing audio via API...")
-    with open(audio_path, "rb") as f:
-        transcription = client.audio.transcriptions.create(
-            file=(os.path.basename(audio_path), f.read()),
-            model=WHISPER_MODEL,
-            response_format="verbose_json",
-            timestamp_granularities=["segment"]
-        )
-    
-    segments = []
-    raw_segments = getattr(transcription, "segments", []) if hasattr(transcription, "segments") else transcription.get("segments", [])
-    
-    for seg in raw_segments:
-        start = seg.get("start") if isinstance(seg, dict) else getattr(seg, "start")
-        end = seg.get("end") if isinstance(seg, dict) else getattr(seg, "end")
-        text = seg.get("text") if isinstance(seg, dict) else getattr(seg, "text")
-        
-        segments.append({
-            "start": round(start, 2),
-            "end": round(end, 2),
-            "text": text.strip()
-        })
-    return segments
+def get_audio_duration(audio_path):
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        audio_path
+    ]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    return float(result.stdout.strip())
+
+def split_audio_into_chunks(audio_path, max_size_mb=24):
+    file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+    if file_size_mb <= max_size_mb:
+        return [audio_path]
+
+    total_duration = get_audio_duration(audio_path)
+    num_chunks = math.ceil(file_size_mb / max_size_mb)
+    chunk_duration = total_duration / num_chunks
+
+    chunk_paths = []
+    print(f"📦 Audio is {file_size_mb:.2f} MB. Splitting into {num_chunks} chunks (~{chunk_duration:.0f}s each)...")
+
+    for i in range(num_chunks):
+        start_time = i * chunk_duration
+        chunk_path = os.path.join(MEDIA_DIR, f"audio_chunk_{i+1}.mp3")
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(start_time),
+            "-i", audio_path,
+            "-t", str(chunk_duration),
+            "-c", "copy",
+            chunk_path
+        ]
+        subprocess.run(cmd, check=True)
+        chunk_paths.append((chunk_path, start_time))
+
+    return chunk_paths
 
 # -------------------------------------------------------------------
-# 4. LLM VIRAL TIMESTAMP EXTRACTION
+# 4. CLOUD TRANSCRIPTION (WHISPER API)
+# -------------------------------------------------------------------
+def transcribe_audio(audio_path):
+    print("🎙 Transcribing audio via API...")
+    audio_chunks = split_audio_into_chunks(audio_path)
+    combined_segments = []
+
+    for item in audio_chunks:
+        if isinstance(item, tuple):
+            chunk_path, time_offset = item
+        else:
+            chunk_path, time_offset = item, 0.0
+
+        print(f"  └─ Uploading {os.path.basename(chunk_path)}...")
+        with open(chunk_path, "rb") as f:
+            transcription = client.audio.transcriptions.create(
+                file=(os.path.basename(chunk_path), f.read()),
+                model=WHISPER_MODEL,
+                response_format="verbose_json",
+                timestamp_granularities=["segment"]
+            )
+
+        raw_segments = getattr(transcription, "segments", []) if hasattr(transcription, "segments") else transcription.get("segments", [])
+
+        for seg in raw_segments:
+            start = seg.get("start") if isinstance(seg, dict) else getattr(seg, "start")
+            end = seg.get("end") if isinstance(seg, dict) else getattr(seg, "end")
+            text = seg.get("text") if isinstance(seg, dict) else getattr(seg, "text")
+
+            combined_segments.append({
+                "start": round(start + time_offset, 2),
+                "end": round(end + time_offset, 2),
+                "text": text.strip()
+            })
+
+    return combined_segments
+
+# -------------------------------------------------------------------
+# 5. LLM VIRAL TIMESTAMP EXTRACTION
 # -------------------------------------------------------------------
 def get_viral_timestamps(transcript):
     print("🤖 Asking LLM to pick top viral moments...")
@@ -134,7 +188,7 @@ def get_viral_timestamps(transcript):
     """
 
     response = client.chat.completions.create(
-        model=LLM_MODEL,  # Dynamically uses llama-3.1-8b-instant or gpt-4o-mini
+        model=LLM_MODEL,
         messages=[
             {"role": "system", "content": "You are an expert video editor picking viral clips. Output strict JSON only."},
             {"role": "user", "content": prompt}
@@ -146,13 +200,13 @@ def get_viral_timestamps(transcript):
     return json.loads(response.choices[0].message.content)
 
 # -------------------------------------------------------------------
-# 5. FFMPEG CROP & RENDER (9:16 VERTICAL)
+# 6. FFMPEG CROP & RENDER (9:16 VERTICAL)
 # -------------------------------------------------------------------
 def render_vertical_clip(video_path, start_time, end_time, output_path):
     duration = end_time - start_time
     print(f"🎬 Rendering vertical clip ({start_time}s to {end_time}s)...")
 
-    # Crop 16:9 1080p source into centered 9:16 vertical frame (1080x1920)
+    # Crop 16:9 source into centered 9:16 vertical frame (1080x1920)
     filter_complex = "crop=ih*(9/16):ih:(iw-ih*(9/16))/2:0,scale=1080:1920"
 
     cmd = [
