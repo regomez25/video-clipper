@@ -136,7 +136,7 @@ def get_viral_timestamps(transcript):
     """
 
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",  # Supported Groq model
+        model="llama-3.1-8b-instant",  # Supported Groq model
         messages=[
             {"role": "system", "content": "You are an expert video editor picking viral clips. Output strict JSON only."},
             {"role": "user", "content": prompt}
