@@ -139,25 +139,36 @@ def transcribe_audio(audio_path):
     audio_chunks = split_audio_into_chunks(audio_path)
     combined_segments = []
 
-    # Note: If OpenAI API key is present, use OpenAI Whisper.
-    # Otherwise, you can point to standard Groq/Whisper endpoints.
-    transcribe_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+    # Build transcription client (Prefer Groq for free Whisper, then OpenAI)
+    transcribe_client = None
+    whisper_model = "whisper-large-v3-turbo"
+
+    if GROQ_API_KEY:
+        transcribe_client = OpenAI(
+            api_key=GROQ_API_KEY, 
+            base_url="https://api.groq.com/openai/v1"
+        )
+        print("  └─ Using Groq API for Whisper transcription")
+    elif OPENAI_API_KEY:
+        transcribe_client = OpenAI(api_key=OPENAI_API_KEY)
+        whisper_model = "whisper-1"
+        print("  └─ Using OpenAI API for Whisper transcription")
+    else:
+        raise RuntimeError("❌ No valid API key found for audio transcription (GROQ_API_KEY or OPENAI_API_KEY required).")
 
     for chunk_path, time_offset in audio_chunks:
         print(f"  └─ Uploading {os.path.basename(chunk_path)}...")
-        
-        if not transcribe_client:
-            raise RuntimeError("❌ Transcription requires OPENAI_API_KEY or a valid audio API endpoint.")
 
         with open(chunk_path, "rb") as f:
             transcription = transcribe_client.audio.transcriptions.create(
                 file=(os.path.basename(chunk_path), f.read()),
-                model="whisper-1",
+                model=whisper_model,
                 response_format="verbose_json",
                 timestamp_granularities=["segment"]
             )
 
-        raw_segments = getattr(transcription, "segments", [])
+        raw_segments = getattr(transcription, "segments", []) if hasattr(transcription, "segments") else transcription.get("segments", [])
+
         for seg in raw_segments:
             start = seg.get("start") if isinstance(seg, dict) else getattr(seg, "start")
             end = seg.get("end") if isinstance(seg, dict) else getattr(seg, "end")
