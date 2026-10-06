@@ -47,13 +47,17 @@ jobs:
       #     echo "$YOUTUBE_COOKIES" > cookies.txt
       #    fi
 
-      - name: Execute Pipeline Script
+      - name: Run Auto Clipper
         env:
+          TARGET_URL: ${{ github.event.inputs.video_url || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          TARGET_URL: ${{ github.event.inputs.youtube_url }}
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
+          if [ -n "$YOUTUBE_COOKIES" ]; then
+            echo "$YOUTUBE_COOKIES" > youtube_cookies.txt
+          fi
           python auto_clipper.py
 
       - name: Upload Output Clips as Artifacts
