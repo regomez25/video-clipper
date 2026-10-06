@@ -24,7 +24,7 @@ jobs:
           python-version: "3.11"
 
       # Standard Node.js setup provides the JS runtime yt-dlp needs
-      - name: Set up Node.js
+      - name: Setup Node.js (for yt-dlp JS challenge solving)
         uses: actions/setup-node@v4
         with:
           node-version: "20"

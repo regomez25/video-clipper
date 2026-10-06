@@ -67,24 +67,23 @@ def download_media(url):
         'quiet': False,
         'no_warnings': False,
         'cookiefile': cookie_file,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'extractor_args': {
             'youtube': {
-                'player_client': ['mweb', 'android', 'ios']
+                'player_client': ['tv_embedded', 'web', 'mweb']
             }
         }
     }
 
-    # Resilient format fallback chain for video
+    # Universal fallback chain: best video+audio, best combined mp4, or absolute best available format
     ydl_opts_video = {
         **ydl_opts_base,
-        'format': 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best',
         'outtmpl': video_path,
         'merge_output_format': 'mp4',
         'overwrites': True,
     }
 
-    # Resilient format fallback for audio extraction
     ydl_opts_audio = {
         **ydl_opts_base,
         'format': 'bestaudio/best',
