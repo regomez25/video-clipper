@@ -7,7 +7,7 @@ import yt_dlp
 from openai import OpenAI
 
 # -------------------------------------------------------------------
-# 1. READ ENVIRONMENT VARIABLES FROM GITHUB ACTIONS
+# 1. READ ENVIRONMENT VARIABLES & INITIALIZE CLIENT
 # -------------------------------------------------------------------
 YOUTUBE_URL = os.getenv("TARGET_URL")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -19,18 +19,25 @@ if not YOUTUBE_URL:
 
 # API Engine Selection
 if GROQ_API_KEY:
-    print("🚀 Initializing Groq API Engine (Primary)...")
+    print("🚀 Initializing Groq API Engine...")
     client = OpenAI(
         api_key=GROQ_API_KEY,
         base_url="https://api.groq.com/openai/v1"
     )
-    LLM_MODEL = "llama-3.1-8b-instant"
+    PREFERRED_LLMS = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "llama3-8b-8192",
+        "mixtral-8x7b-32768"
+    ]
     WHISPER_MODEL = "whisper-large-v3-turbo"
+
 elif OPENAI_API_KEY:
-    print("🚀 Initializing OpenAI API Engine (Primary)...")
+    print("🚀 Initializing OpenAI API Engine...")
     client = OpenAI(api_key=OPENAI_API_KEY)
-    LLM_MODEL = "gpt-4o-mini"
+    PREFERRED_LLMS = ["gpt-4o-mini", "gpt-4o"]
     WHISPER_MODEL = "whisper-1"
+
 else:
     print("❌ Error: Neither GROQ_API_KEY nor OPENAI_API_KEY is configured.")
     sys.exit(1)
@@ -71,7 +78,7 @@ def download_media(url):
         'overwrites': True,
     }
 
-    # 2. Download & Post-Process Audio Stream (using 64k bitrate for smaller file size)
+    # 2. Download & Post-Process Audio Stream (64k bitrate for optimal size)
     ydl_opts_audio = {
         **ydl_opts_base,
         'format': 'bestaudio/best',
@@ -110,7 +117,7 @@ def get_audio_duration(audio_path):
 def split_audio_into_chunks(audio_path, max_size_mb=24):
     file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
     if file_size_mb <= max_size_mb:
-        return [audio_path]
+        return [(audio_path, 0.0)]
 
     total_duration = get_audio_duration(audio_path)
     num_chunks = math.ceil(file_size_mb / max_size_mb)
@@ -143,12 +150,7 @@ def transcribe_audio(audio_path):
     audio_chunks = split_audio_into_chunks(audio_path)
     combined_segments = []
 
-    for item in audio_chunks:
-        if isinstance(item, tuple):
-            chunk_path, time_offset = item
-        else:
-            chunk_path, time_offset = item, 0.0
-
+    for chunk_path, time_offset in audio_chunks:
         print(f"  └─ Uploading {os.path.basename(chunk_path)}...")
         with open(chunk_path, "rb") as f:
             transcription = client.audio.transcriptions.create(
@@ -174,10 +176,36 @@ def transcribe_audio(audio_path):
     return combined_segments
 
 # -------------------------------------------------------------------
-# 5. LLM VIRAL TIMESTAMP EXTRACTION
+# 5. DYNAMIC MODEL DISCOVERY & FALLBACK
 # -------------------------------------------------------------------
+def get_available_llm_candidates():
+    """Fetches currently active models from the API and orders them by preference."""
+    try:
+        models_response = client.models.list()
+        active_model_ids = {m.id for m in models_response.data}
+
+        # Filter preferred models that are active right now
+        available_models = [m for m in PREFERRED_LLMS if m in active_model_ids]
+
+        if available_models:
+            print(f"✅ Discovered active models: {available_models}")
+            return available_models
+
+        # Dynamic fallback: find any model with 'llama' or 'gpt' in the name
+        keyword = "llama" if GROQ_API_KEY else "gpt"
+        fallbacks = [m.id for m in models_response.data if keyword in m.id.lower()]
+        if fallbacks:
+            return fallbacks
+
+    except Exception as e:
+        print(f"⚠️ Could not fetch active model list dynamically: {e}")
+
+    return PREFERRED_LLMS
+
 def get_viral_timestamps(transcript):
     print("🤖 Asking LLM to pick top viral moments...")
+
+    candidate_models = get_available_llm_candidates()
 
     prompt = f"""
     Analyze the following transcript and extract 1-3 highly engaging short clip segments (30-60 seconds each).
@@ -187,17 +215,28 @@ def get_viral_timestamps(transcript):
     {transcript}
     """
 
-    response = client.chat.completions.create(
-        model=LLM_MODEL,
-        messages=[
-            {"role": "system", "content": "You are an expert video editor picking viral clips. Output strict JSON only."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.3,
-        response_format={"type": "json_object"}
-    )
+    last_error = None
 
-    return json.loads(response.choices[0].message.content)
+    for model_name in candidate_models:
+        try:
+            print(f"  └─ Attempting completion with model: {model_name}...")
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": "You are an expert video editor picking viral clips. Output strict JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
+            print(f"✅ Success using model: {model_name}")
+            return json.loads(response.choices[0].message.content)
+
+        except Exception as e:
+            print(f"⚠️ Model {model_name} failed: {e}. Trying next available model...")
+            last_error = e
+
+    raise RuntimeError(f"❌ All candidate models failed. Last error: {last_error}")
 
 # -------------------------------------------------------------------
 # 6. FFMPEG CROP & RENDER (9:16 VERTICAL)
