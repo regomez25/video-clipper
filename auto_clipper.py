@@ -56,9 +56,10 @@ def download_media(url):
     audio_base = os.path.join(MEDIA_DIR, "input_audio")
     audio_path = f"{audio_base}.mp3"
 
-    cookie_file = "youtube_cookies.txt" if os.path.exists("youtube_cookies.txt") else None
+    cookie_file = "youtube_cookies.txt" if os.path.exists("youtube_cookies.txt") and os.path.getsize("youtube_cookies.txt") > 0 else None
+    
     if cookie_file:
-        print("🔑 Using provided YouTube cookies file for authentication.")
+        print("🔑 Using provided YouTube cookies for authentication.")
 
     ydl_opts_base = {
         'geo_bypass': True,
@@ -74,14 +75,16 @@ def download_media(url):
         }
     }
 
+    # Resilient format fallback chain for video
     ydl_opts_video = {
         **ydl_opts_base,
-        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+        'format': 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
         'outtmpl': video_path,
         'merge_output_format': 'mp4',
         'overwrites': True,
     }
 
+    # Resilient format fallback for audio extraction
     ydl_opts_audio = {
         **ydl_opts_base,
         'format': 'bestaudio/best',
