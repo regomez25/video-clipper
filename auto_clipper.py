@@ -67,18 +67,18 @@ def download_media(url):
         'quiet': False,
         'no_warnings': False,
         'cookiefile': cookie_file,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
         'extractor_args': {
             'youtube': {
-                'player_client': ['tv_embedded', 'web', 'mweb']
+                'player_client': ['tv', 'web_embedded', 'web']
             }
         }
     }
 
-    # Universal fallback chain: best video+audio, best combined mp4, or absolute best available format
+    # Extremely resilient format fallback chain
     ydl_opts_video = {
         **ydl_opts_base,
-        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best',
+        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best/mp4',
         'outtmpl': video_path,
         'merge_output_format': 'mp4',
         'overwrites': True,
