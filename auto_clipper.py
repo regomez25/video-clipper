@@ -20,10 +20,9 @@ if not YOUTUBE_URL:
 if GROQ_API_KEY:
     print("🚀 Using Groq API Engine...")
     client = OpenAI(
-        api_key=os.environ.get("GROQ_API_KEY"),
+        api_key=GROQ_API_KEY,
         base_url="https://api.groq.com/openai/v1"
     )
-    # CHANGED: Replaced deprecated 70b model with a current free-tier option
     LLM_MODEL = "llama-3.1-8b-instant" 
     WHISPER_MODEL = "whisper-large-v3-turbo"
 elif OPENAI_API_KEY:
@@ -93,11 +92,12 @@ def download_media(url):
         ydl.download([url])
 
     return video_path, audio_path
+
 # -------------------------------------------------------------------
 # 3. CLOUD TRANSCRIPTION (WHISPER API)
 # -------------------------------------------------------------------
 def transcribe_audio(audio_path):
-    print("🎙️ Transcribing audio via API...")
+    print("🎙️️ Transcribing audio via API...")
     with open(audio_path, "rb") as f:
         transcription = client.audio.transcriptions.create(
             file=(os.path.basename(audio_path), f.read()),
@@ -136,7 +136,7 @@ def get_viral_timestamps(transcript):
     """
 
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",  # Supported Groq model
+        model=LLM_MODEL,  # Dynamically uses llama-3.1-8b-instant or gpt-4o-mini
         messages=[
             {"role": "system", "content": "You are an expert video editor picking viral clips. Output strict JSON only."},
             {"role": "user", "content": prompt}
