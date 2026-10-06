@@ -7,15 +7,18 @@ import yt_dlp
 from openai import OpenAI
 
 # -------------------------------------------------------------------
-# 1. READ ENVIRONMENT VARIABLES & SETUP MULTI-PROVIDER CONFIGS
+# 1. READ ENVIRONMENT & SETUP OPENROUTER CLIENT
 # -------------------------------------------------------------------
 YOUTUBE_URL = os.getenv("TARGET_URL")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Optional fallback for Whisper transcriptions
 
 if not YOUTUBE_URL:
     print("❌ Error: TARGET_URL environment variable is missing.")
+    sys.exit(1)
+
+if not OPENROUTER_API_KEY:
+    print("❌ Error: OPENROUTER_API_KEY environment variable is missing.")
     sys.exit(1)
 
 MEDIA_DIR = "./media"
@@ -23,49 +26,24 @@ OUTPUT_DIR = "./output"
 os.makedirs(MEDIA_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Define Provider Cascade Hierarchy
-PROVIDERS = []
+# Initialize OpenRouter Client
+openrouter_client = OpenAI(
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1",
+    default_headers={
+        "HTTP-Referer": "https://github.com/video-clipper",
+        "X-Title": "Auto Video Clipper"
+    }
+)
 
-if GROQ_API_KEY:
-    PROVIDERS.append({
-        "name": "Groq",
-        "client": OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1"),
-        "preferred_models": [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "qwen-2.5-coder-32b",
-            "deepseek-r1-distill-llama-70b"
-        ],
-        "whisper_model": "whisper-large-v3-turbo"
-    })
-
-if OPENAI_API_KEY:
-    PROVIDERS.append({
-        "name": "OpenAI",
-        "client": OpenAI(api_key=OPENAI_API_KEY),
-        "preferred_models": ["gpt-4o-mini", "gpt-4o"],
-        "whisper_model": "whisper-1"
-    })
-
-if OPENROUTER_API_KEY:
-    PROVIDERS.append({
-        "name": "OpenRouter",
-        "client": OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1"),
-        "preferred_models": [
-            "meta-llama/llama-3.3-70b-instruct",
-            "deepseek/deepseek-r1",
-            "anthropic/claude-3.5-haiku"
-        ],
-        "whisper_model": None  # OpenRouter is LLM only
-    })
-
-if not PROVIDERS:
-    print("❌ Error: No valid API keys found (GROQ_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY).")
-    sys.exit(1)
-
-print(f"🔗 Loaded Provider Cascade: {[p['name'] for p in PROVIDERS]}")
-
-EXCLUDED_KEYWORDS = ["guard", "prompt-guard", "whisper", "embedding", "safetensors", "moderation", "vision"]
+# Ordered fallback list of OpenRouter models (High quality -> Fast -> Free)
+MODEL_FALLBACK_CASCADE = [
+    "meta-llama/llama-3.3-70b-instruct",       # High quality Llama 3.3
+    "deepseek/deepseek-r1-distill-llama-70b",   # Fast Reasoning
+    "qwen/qwen-2.5-72b-instruct",               # Qwen alternative
+    "google/gemini-2.5-flash:free",             # High context free fallback
+    "openrouter/free"                            # Router auto-selects free models
+]
 
 # -------------------------------------------------------------------
 # 2. DOWNLOAD YOUTUBE MEDIA
@@ -116,7 +94,7 @@ def download_media(url):
     return video_path, audio_path
 
 # -------------------------------------------------------------------
-# 3. AUDIO SPLITTING HELPER
+# 3. AUDIO SPLITTING & TRANSCRIPTION
 # -------------------------------------------------------------------
 def get_audio_duration(audio_path):
     cmd = [
@@ -138,7 +116,7 @@ def split_audio_into_chunks(audio_path, max_size_mb=24):
     chunk_duration = total_duration / num_chunks
 
     chunk_paths = []
-    print(f"📦 Audio is {file_size_mb:.2f} MB. Splitting into {num_chunks} chunks (~{chunk_duration:.0f}s each)...")
+    print(f"📦 Audio is {file_size_mb:.2f} MB. Splitting into {num_chunks} chunks...")
 
     for i in range(num_chunks):
         start_time = i * chunk_duration
@@ -156,70 +134,51 @@ def split_audio_into_chunks(audio_path, max_size_mb=24):
 
     return chunk_paths
 
-# -------------------------------------------------------------------
-# 4. TRANSCRIPTION WITH FALLBACK
-# -------------------------------------------------------------------
 def transcribe_audio(audio_path):
-    print("🎙 Transcribing audio via API...")
+    print("🎙 Transcribing audio...")
     audio_chunks = split_audio_into_chunks(audio_path)
     combined_segments = []
 
-    # Find first provider that supports Whisper transcription
-    audio_providers = [p for p in PROVIDERS if p.get("whisper_model")]
-    if not audio_providers:
-        raise RuntimeError("❌ No provider available supporting Whisper transcription.")
+    # Note: If OpenAI API key is present, use OpenAI Whisper.
+    # Otherwise, you can point to standard Groq/Whisper endpoints.
+    transcribe_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
     for chunk_path, time_offset in audio_chunks:
         print(f"  └─ Uploading {os.path.basename(chunk_path)}...")
-        transcription_success = False
+        
+        if not transcribe_client:
+            raise RuntimeError("❌ Transcription requires OPENAI_API_KEY or a valid audio API endpoint.")
 
-        for provider in audio_providers:
-            try:
-                print(f"     Attempting Whisper with {provider['name']}...")
-                with open(chunk_path, "rb") as f:
-                    transcription = provider["client"].audio.transcriptions.create(
-                        file=(os.path.basename(chunk_path), f.read()),
-                        model=provider["whisper_model"],
-                        response_format="verbose_json",
-                        timestamp_granularities=["segment"]
-                    )
+        with open(chunk_path, "rb") as f:
+            transcription = transcribe_client.audio.transcriptions.create(
+                file=(os.path.basename(chunk_path), f.read()),
+                model="whisper-1",
+                response_format="verbose_json",
+                timestamp_granularities=["segment"]
+            )
 
-                raw_segments = getattr(transcription, "segments", []) if hasattr(transcription, "segments") else transcription.get("segments", [])
+        raw_segments = getattr(transcription, "segments", [])
+        for seg in raw_segments:
+            start = seg.get("start") if isinstance(seg, dict) else getattr(seg, "start")
+            end = seg.get("end") if isinstance(seg, dict) else getattr(seg, "end")
+            text = seg.get("text") if isinstance(seg, dict) else getattr(seg, "text")
 
-                for seg in raw_segments:
-                    start = seg.get("start") if isinstance(seg, dict) else getattr(seg, "start")
-                    end = seg.get("end") if isinstance(seg, dict) else getattr(seg, "end")
-                    text = seg.get("text") if isinstance(seg, dict) else getattr(seg, "text")
-
-                    combined_segments.append({
-                        "start": round(start + time_offset, 2),
-                        "end": round(end + time_offset, 2),
-                        "text": text.strip()
-                    })
-
-                transcription_success = True
-                break
-
-            except Exception as e:
-                print(f"⚠️️ Whisper failed on {provider['name']}: {e}. Trying next provider...")
-
-        if not transcription_success:
-            raise RuntimeError(f"❌ Failed to transcribe chunk {chunk_path} across all providers.")
+            combined_segments.append({
+                "start": round(start + time_offset, 2),
+                "end": round(end + time_offset, 2),
+                "text": text.strip()
+            })
 
     return combined_segments
 
 # -------------------------------------------------------------------
-# 5. LLM MULTI-PROVIDER FALLBACK EXTRACTION
+# 4. OPENROUTER MULTI-MODEL REASONING
 # -------------------------------------------------------------------
-def is_valid_chat_model(model_id):
-    model_id_lower = model_id.lower()
-    return not any(excluded in model_id_lower for excluded in EXCLUDED_KEYWORDS)
-
 def format_transcript_for_llm(segments):
     return "\n".join([f"[{s['start']}s - {s['end']}s] {s['text']}" for s in segments])
 
 def get_viral_timestamps(transcript_segments):
-    print("🤖 Asking LLM to pick top viral moments...")
+    print("🤖 Asking OpenRouter for top viral moments...")
 
     formatted_transcript = format_transcript_for_llm(transcript_segments)
     max_chars = 48000
@@ -236,50 +195,41 @@ def get_viral_timestamps(transcript_segments):
 
     last_error = None
 
-    # Cascade across providers in defined order (Groq -> OpenAI -> OpenRouter)
-    for provider in PROVIDERS:
-        provider_name = provider["name"]
-        client = provider["client"]
-        preferred = provider["preferred_models"]
-
-        print(f"🔄 Evaluating Provider: {provider_name}...")
-
-        # Discover active models on current provider
-        candidate_models = preferred
+    # Iterate through fallback models on OpenRouter
+    for model_name in MODEL_FALLBACK_CASCADE:
         try:
-            models_response = client.models.list()
-            active_ids = {m.id for m in models_response.data if is_valid_chat_model(m.id)}
-            valid_candidates = [m for m in preferred if m in active_ids]
-            if valid_candidates:
-                candidate_models = valid_candidates
-        except Exception:
-            pass  # Fallback to preferred list if list API call fails
+            print(f"  └─ Requesting OpenRouter Model: {model_name}...")
+            
+            response = openrouter_client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert video editor. Return valid JSON only containing viral clips with exact start and end timestamps."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
 
-        for model_name in candidate_models:
-            try:
-                print(f"  └─ [{provider_name}] Requesting model: {model_name}...")
-                response = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": "You are an expert video editor. Return valid JSON only containing viral clips with exact start and end timestamps."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.3,
-                    response_format={"type": "json_object"}
-                )
+            raw_content = response.choices[0].message.content
+            
+            # Clean possible markdown wrapping (e.g. ```json ... ```)
+            clean_json = raw_content.replace("```json", "").replace("```", "").strip()
+            parsed_data = json.loads(clean_json)
 
-                raw_content = response.choices[0].message.content
-                print(f"✅ Success using {provider_name} ({model_name})")
-                return json.loads(raw_content)
+            print(f"✅ Success using OpenRouter model: {model_name}")
+            return parsed_data
 
-            except Exception as e:
-                print(f"⚠️ [{provider_name}] Model {model_name} failed: {e}")
-                last_error = e
+        except Exception as e:
+            print(f"⚠️️ Model {model_name} failed: {e}")
+            last_error = e
 
-    raise RuntimeError(f"❌ All providers and candidate models failed. Last error: {last_error}")
+    raise RuntimeError(f"❌ All OpenRouter fallback models failed. Last error: {last_error}")
 
 # -------------------------------------------------------------------
-# 6. FFMPEG CROP & RENDER (9:16 VERTICAL)
+# 5. FFMPEG CROP & RENDER (9:16 VERTICAL)
 # -------------------------------------------------------------------
 def render_vertical_clip(video_path, start_time, end_time, output_path):
     duration = end_time - start_time
