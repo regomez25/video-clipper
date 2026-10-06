@@ -23,7 +23,8 @@ if GROQ_API_KEY:
         api_key=os.environ.get("GROQ_API_KEY"),
         base_url="https://api.groq.com/openai/v1"
     )
-    LLM_MODEL = "llama-3.3-70b-versatile"
+    # CHANGED: Replaced deprecated 70b model with a current free-tier option
+    LLM_MODEL = "llama-3.1-8b-instant" 
     WHISPER_MODEL = "whisper-large-v3-turbo"
 elif OPENAI_API_KEY:
     print("🚀 Using OpenAI API Engine...")
