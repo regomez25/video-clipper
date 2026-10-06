@@ -18,20 +18,18 @@ if not YOUTUBE_URL:
 
 # API Engine Selection (Supports free-tier Groq API or OpenAI)
 if GROQ_API_KEY:
-    print("🚀 Using Groq API Engine...")
-    client = OpenAI(
-        api_key=GROQ_API_KEY,
-        base_url="https://api.groq.com/openai/v1"
-    )
-    LLM_MODEL = "llama-3.1-8b-instant" 
+    print("🚀 Initializing Groq API Engine (Primary)...")
+    client = OpenAI(api_key=GROQ_API_KEY, base_url="https://groq.com")
+    LLM_MODEL = "openai/gpt-oss-120b"
     WHISPER_MODEL = "whisper-large-v3-turbo"
+    USING_GROQ = True
 elif OPENAI_API_KEY:
-    print("🚀 Using OpenAI API Engine...")
+    print("🚀 Initializing OpenAI API Engine (Primary)...")
     client = OpenAI(api_key=OPENAI_API_KEY)
     LLM_MODEL = "gpt-4o-mini"
     WHISPER_MODEL = "whisper-1"
 else:
-    print("❌ Error: Neither GROQ_API_KEY nor OPENAI_API_KEY is configured in GitHub Secrets.")
+    print("❌ Error: Neither GROQ_API_KEY nor OPENAI_API_KEY is configured.")
     sys.exit(1)
 
 MEDIA_DIR = "./media"
