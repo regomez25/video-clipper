@@ -15,6 +15,10 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Optional fallback for Whisper tr
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")  # Optional fallback for Groq Whisper transcription
 
 
+print("OPENROUTER_API_KEY:",OPENROUTER_API_KEY);
+print("OPENAI_API_KEY:",OPENAI_API_KEY);
+print("GROQ_API_KEY:",GROQ_API_KEY);
+
 if not YOUTUBE_URL:
     print("❌ Error: TARGET_URL environment variable is missing.")
     sys.exit(1)
